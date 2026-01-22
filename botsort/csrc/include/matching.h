@@ -41,11 +41,11 @@ CostMatrix iou_distance(const std::vector<std::shared_ptr<Track>> &tracks,
  * @param distance_metric Distance metric to use for calculating the embedding distance
  * @return std::tuple<CostMatrix, CostMatrix> Tuple of embedding distance cost matrix and embedding distance mask
  */
-std::tuple<CostMatrix, CostMatrix>
+/* std::tuple<CostMatrix, CostMatrix>
 embedding_distance(const std::vector<std::shared_ptr<Track>> &tracks,
                    const std::vector<std::shared_ptr<Track>> &detections,
                    float max_embedding_distance,
-                   const std::string &distance_metric);
+                   const std::string &distance_metric); */
 
 /**
  * @brief Fuses the detection score into the cost matrix in-place
@@ -68,10 +68,10 @@ void fuse_score(CostMatrix &cost_matrix,
  * @param lambda Weighting factor for motion (default: 0.98)
  * @param only_position Set to true only position should be used for gating distance
  */
-void fuse_motion(const KalmanFilter &KF, CostMatrix &cost_matrix,
+/* void fuse_motion(const KalmanFilter &KF, CostMatrix &cost_matrix,
                  const std::vector<std::shared_ptr<Track>> &tracks,
                  const std::vector<std::shared_ptr<Track>> &detections,
-                 float lambda = 0.98F, bool only_position = false);
+                 float lambda = 0.98F, bool only_position = false); */
 
 /**
  * @brief Fuse IoU distance with embedding distance keeping the mask in mind

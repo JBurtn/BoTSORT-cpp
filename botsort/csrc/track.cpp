@@ -1,13 +1,17 @@
-#include "track.h"
+#include "include/track.h"
 
 #include <utility>
 
-#include "profiler.h"
+#include "include/profiler.h"
 
-Track::Track(std::vector<float> tlwh, float score, uint8_t class_id,
-             std::optional<FeatureVector> feat, int feat_history_size)
-    : det_tlwh(std::move(tlwh)), _score(score), _class_id(class_id),
-      tracklet_len(0), is_activated(false), state(TrackState::New)
+Track::Track(
+    std::vector<float> tlwh,
+    float score,
+    uint8_t class_id,
+    std::optional<FeatureVector> feat,
+    int feat_history_size)
+    : is_activated(false), state(TrackState::New), tracklet_len(0),
+      det_tlwh(std::move(tlwh)), _score(score), _class_id(class_id)
 {
 
     if (feat)
@@ -17,8 +21,8 @@ Track::Track(std::vector<float> tlwh, float score, uint8_t class_id,
     }
     else
     {
-        curr_feat = nullptr;
-        smooth_feat = nullptr;
+        //curr_feat = nullptr;
+        //smooth_feat = nullptr;
         _feat_history_size = 0;
     }
 
@@ -61,11 +65,11 @@ void Track::re_activate(KalmanFilter &kalman_filter, Track &new_track,
     mean = state_space.first;
     covariance = state_space.second;
 
-    if (new_track.curr_feat)
+    /* if (new_track.curr_feat)
     {
         _update_features(new_track.curr_feat);
     }
-
+ */
     if (new_id)
     {
         track_id = next_id();
@@ -132,10 +136,10 @@ void Track::update(KalmanFilter &kalman_filter, Track &new_track,
     KFDataStateSpace state_space =
             kalman_filter.update(mean, covariance, new_track_bbox);
 
-    if (new_track.curr_feat)
+    /* if (new_track.curr_feat)
     {
         _update_features(new_track.curr_feat);
-    }
+    } */
 
     mean = state_space.first;
     covariance = state_space.second;
@@ -149,7 +153,7 @@ void Track::update(KalmanFilter &kalman_filter, Track &new_track,
     _update_tracklet_tlwh_inplace();
 }
 
-void Track::_update_features(const std::shared_ptr<FeatureVector> &feat)
+/* void Track::_update_features(const std::shared_ptr<FeatureVector> &feat)
 {
     *feat /= feat->norm();
 
@@ -163,13 +167,13 @@ void Track::_update_features(const std::shared_ptr<FeatureVector> &feat)
         *smooth_feat = _alpha * (*smooth_feat) + (1 - _alpha) * (*feat);
     }
 
-    if (_feat_history.size() == _feat_history_size)
+    if (_feat_history.size() == static_cast<size_t>(_feat_history_size))
     {
         _feat_history.pop_front();
     }
     _feat_history.push_back(curr_feat);
     *smooth_feat /= smooth_feat->norm();
-}
+} */
 
 int Track::next_id()
 {
@@ -218,7 +222,7 @@ void Track::_update_tracklet_tlwh_inplace()
     _tlwh = {mean(0) - mean(2) / 2, mean(1) - mean(3) / 2, mean(2), mean(3)};
 }
 
-std::vector<float> Track::get_tlwh() const
+const std::vector<float>& Track::get_tlwh() const
 {
     return _tlwh;
 }
@@ -235,34 +239,12 @@ uint8_t Track::get_class_id() const
 
 void Track::_update_class_id(uint8_t class_id, float score)
 {
-    if (!_class_hist.empty())
+    this->viewed_class_ids[class_id] += score;
+    if (this->viewed_class_ids[class_id] > max_value)
     {
-        int max_freq = 0;
-        bool found = false;
-
-        for (auto &class_hist: _class_hist)
-        {
-            if (class_hist.first == class_id)
-            {
-                class_hist.second += score;
-                found = true;
-            }
-            if (static_cast<int>(class_hist.second) > max_freq)
-            {
-                max_freq = static_cast<int>(class_hist.second);
-                _class_id = class_hist.first;
-            }
-        }
-
-        if (!found)
-        {
-            _class_hist.emplace_back(class_id, score);
-            _class_id = class_id;
-        }
-    }
-    else
-    {
-        _class_hist.emplace_back(class_id, score);
+        max_value = this->viewed_class_ids[class_id];
+        //this->max_ids.clear();
         _class_id = class_id;
     }
+    //this->max_ids.insert(class_id);
 }

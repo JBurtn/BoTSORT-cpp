@@ -83,7 +83,7 @@ public:
                                              15.507, 16.919};
 
 private:
-    float _std_weight_position, _std_weight_velocity;
+    const float _std_weight_position, _std_weight_velocity;
 
     Eigen::Matrix<float, KALMAN_STATE_SPACE_DIM, KALMAN_STATE_SPACE_DIM>
             _state_transition_matrix;

@@ -1,14 +1,24 @@
-#include "BoTSORT.h"
+#include "include/botsort.h"
 
 #include <optional>
 #include <unordered_set>
 
 #include <opencv2/imgproc.hpp>
 
-#include "DataType.h"
-#include "INIReader.h"
-#include "matching.h"
-#include "profiler.h"
+#include "include/DataType.h"
+#include "include/INIReader.h"
+#include "include/matching.h"
+#include "include/profiler.h"
+
+/*
+* bindings:
+*   BoTSoRT
+*       track
+*   Config
+*       TrackerParams
+*       GMC_Params
+*       
+*/
 
 namespace
 {
@@ -47,43 +57,26 @@ T fetch_config(const Config<T> &config,
 }
 }// namespace
 
-BoTSORT::BoTSORT(const Config<TrackerParams> &tracker_config,
-                 const Config<GMC_Params> &gmc_config,
-                 const Config<ReIDParams> &reid_config,
-                 const std::string &reid_onnx_model_path)
+Botsort::Botsort(const Config<TrackerParams> &tracker_config,
+                 const Config<GMC_Params> &gmc_config)
+                 //const Config<ReIDParams> &reid_config,
+                 //const std::string &reid_onnx_model_path)
 {
-    auto tracker_params = fetch_config<TrackerParams>(
-            tracker_config, TrackerParams::load_config);
+    auto tracker_params = fetch_config<TrackerParams>
+    (tracker_config, TrackerParams::load_config);
     _load_params_from_config(tracker_params);
 
     // Tracker module
     _frame_id = 0;
     _buffer_size = static_cast<uint8_t>(_frame_rate / 30.0 * _track_buffer);
     _max_time_lost = _buffer_size;
-    _kalman_filter = std::make_unique<KalmanFilter>(
-            static_cast<double>(1.0 / _frame_rate));
-
-
-    // Re-ID module, load visual feature extractor here
-    if (_reid_enabled && not_empty(reid_config) &&
-        reid_onnx_model_path.size() > 0)
-    {
-        auto reid_params =
-                fetch_config<ReIDParams>(reid_config, ReIDParams::load_config);
-        _reid_model =
-                std::make_unique<ReIDModel>(reid_params, reid_onnx_model_path);
-    }
-    else
-    {
-        std::cout << "Re-ID module disabled" << std::endl;
-        _reid_enabled = false;
-    }
+    _kalman_filter = std::make_unique<KalmanFilter>(static_cast<double>(1.0 / _frame_rate));
 
     // Global motion compensation module
     if (_gmc_enabled && not_empty(gmc_config))
     {
-        auto gmc_params = fetch_config<
-                GMC_Params>(gmc_config, [this](const std::string &config_path) {
+        auto gmc_params = fetch_config<GMC_Params>
+        (gmc_config, [this](const std::string &config_path) {
             return GMC_Params::load_config(
                     GlobalMotionCompensation::GMC_method_map[_gmc_method_name],
                     config_path);
@@ -97,58 +90,103 @@ BoTSORT::BoTSORT(const Config<TrackerParams> &tracker_config,
     }
 }
 
-
-std::vector<std::shared_ptr<Track>>
-BoTSORT::track(const std::vector<Detection> &detections, const cv::Mat &frame)
+py::array_t<float>
+Botsort::track(const py::array_t<float> &box_tlwh,
+               const py::array_t<float> &score,
+               const py::array_t<uint8_t> &class_ids,
+               const py::array_t<uint8_t> &frame)
 {
-    PROFILE_FUNCTION();
+    py::buffer_info buf = frame.request(false);
+    py::buffer_info box_tlwh_buf = box_tlwh.request(false);
+    py::buffer_info score_buf = score.request(false);
+    py::buffer_info class_ids_buf = class_ids.request(false);
+
+    if (buf.shape.size() != 3)
+    {
+        throw std::length_error("must pass a single frame to track. Batch not supported");
+    }
+    if (std::min({buf.shape[0], buf.shape[1], buf.shape[2]}) != buf.shape[2]){
+        throw std::runtime_error("Final dim Channels must be smallest");
+    }
+    if (box_tlwh.ndim() != 1) {
+        throw std::runtime_error("box array must be 1-dimensional");
+    }
+    if (score.ndim() != 1) {
+        throw std::runtime_error("score array must be 1-dimensional");
+    }
+    if (class_ids.ndim() != 1) {
+        throw std::runtime_error("class ids array must be 1-dimensional");
+    }
+
+    int rows = buf.shape[0];
+    int cols = buf.shape[1];
+
+    std::span<const float> box_tlwh_span{static_cast<float*> (box_tlwh_buf.ptr), 
+                                         static_cast<size_t> (box_tlwh_buf.size)};
+    std::span<const float> score_span{static_cast<float*> (score_buf.ptr),
+                                      static_cast<size_t> (score_buf.size)};
+    std::span<const uint8_t> class_ids_span{static_cast<uint8_t*> (class_ids_buf.ptr), 
+                                            static_cast<size_t> (class_ids_buf.size)};
+    
+    cv::Mat cv_frame(rows, cols, CV_8UC3, static_cast<uint8_t*>(buf.ptr));
+    
+    std::vector<std::shared_ptr<Track>> output_tracks;
+    Botsort::track(
+        box_tlwh_span, score_span, class_ids_span, cv_frame, output_tracks);
+    py::array_t<float> output({static_cast<int>(output_tracks.size()), 7});
+    auto view = output.mutable_unchecked<2>();
+
+    for (auto i = 0; i < static_cast<int>(output_tracks.size()); ++i){
+        view(i, 0) = output_tracks[i]->get_tlwh()[0];
+        view(i, 1) = output_tracks[i]->get_tlwh()[1];
+        view(i, 2) = output_tracks[i]->get_tlwh()[2];
+        view(i, 3) = output_tracks[i]->get_tlwh()[3];
+        view(i, 4) = static_cast<float>(output_tracks[i]->get_class_id());
+        view(i, 5) = output_tracks[i]->get_score();
+        view(i, 6) = static_cast<float>(output_tracks[i]->track_id);
+    }
+    return output;
+}
+
+void
+Botsort::track(std::span<const float> &box_tlwh,
+               std::span<const float> &score,
+               std::span<const uint8_t> &class_ids,
+               const cv::Mat &frame,
+               std::vector<std::shared_ptr<Track>> &output_tracks)
+{
+    //PROFILE_FUNCTION();
     ////////////////// CREATE TRACK OBJECT FOR ALL THE DETECTIONS //////////////////
     // For all detections, extract features, create tracks and classify on the segregate of confidence
+
     _frame_id++;
     std::vector<std::shared_ptr<Track>> activated_tracks, refind_tracks;
-    std::vector<std::shared_ptr<Track>> detections_high_conf,
-            detections_low_conf;
-    detections_low_conf.reserve(detections.size()),
-            detections_high_conf.reserve(detections.size());
+    std::vector<std::shared_ptr<Track>> detections_high_conf, detections_low_conf;
+    
+    detections_low_conf.reserve(class_ids.size());
+    detections_high_conf.reserve(class_ids.size());
 
-    if (!detections.empty())
+    for (size_t i = 0; i < box_tlwh.size(); i += 4)
     {
-        for (Detection &detection:
-             const_cast<std::vector<Detection> &>(detections))
+        float x = std::max(0.0f, box_tlwh[0 + i]);
+        float y = std::max(0.0f, box_tlwh[1 + i]);
+        float width = std::min(static_cast<float>(frame.cols - 1),
+                                box_tlwh[2 + i]);
+        float height = std::min(static_cast<float>(frame.rows - 1),
+                                box_tlwh[3 + i]);
+
+        std::shared_ptr<Track> tracklet;
+        std::vector<float> tlwh = {x, y, width, height};
+
+        if (score[i] > _track_low_thresh)
         {
-            detection.bbox_tlwh.x = std::max(0.0f, detection.bbox_tlwh.x);
-            detection.bbox_tlwh.y = std::max(0.0f, detection.bbox_tlwh.y);
-            detection.bbox_tlwh.width =
-                    std::min(static_cast<float>(frame.cols - 1),
-                             detection.bbox_tlwh.width);
-            detection.bbox_tlwh.height =
-                    std::min(static_cast<float>(frame.rows - 1),
-                             detection.bbox_tlwh.height);
+            tracklet = std::make_shared<Track>(
+                        tlwh, score[i], class_ids[i]);
 
-            std::shared_ptr<Track> tracklet;
-            std::vector<float> tlwh = {
-                    detection.bbox_tlwh.x, detection.bbox_tlwh.y,
-                    detection.bbox_tlwh.width, detection.bbox_tlwh.height};
-
-            if (detection.confidence > _track_low_thresh)
-            {
-                if (_reid_enabled)
-                {
-                    FeatureVector embedding =
-                            _extract_features(frame, detection.bbox_tlwh);
-                    tracklet = std::make_shared<Track>(
-                            tlwh, detection.confidence, detection.class_id,
-                            embedding);
-                }
-                else
-                    tracklet = std::make_shared<Track>(
-                            tlwh, detection.confidence, detection.class_id);
-
-                if (detection.confidence >= _track_high_thresh)
-                    detections_high_conf.push_back(tracklet);
-                else
-                    detections_low_conf.push_back(tracklet);
-            }
+            if (score[i] >= _track_high_thresh)
+                {detections_high_conf.push_back(tracklet);}
+            else
+                {detections_low_conf.push_back(tracklet);}
         }
     }
 
@@ -156,13 +194,13 @@ BoTSORT::track(const std::vector<Detection> &detections, const cv::Mat &frame)
     std::vector<std::shared_ptr<Track>> unconfirmed_tracks, tracked_tracks;
     for (const std::shared_ptr<Track> &track: _tracked_tracks)
     {
-        if (!track->is_activated)
+        if (track->is_activated)
         {
-            unconfirmed_tracks.push_back(track);
+            tracked_tracks.push_back(track);
         }
         else
         {
-            tracked_tracks.push_back(track);
+            unconfirmed_tracks.push_back(track);
         }
     }
     ////////////////// CREATE TRACK OBJECT FOR ALL THE DETECTIONS //////////////////
@@ -179,7 +217,7 @@ BoTSORT::track(const std::vector<Detection> &detections, const cv::Mat &frame)
     // Estimate camera motion and apply camera motion compensation
     if (_gmc_enabled)
     {
-        HomographyMatrix H = _gmc_algo->apply(frame, detections);
+        HomographyMatrix H = _gmc_algo->apply(frame, box_tlwh);
         Track::multi_gmc(tracks_pool, H);
         Track::multi_gmc(unconfirmed_tracks, H);
     }
@@ -194,37 +232,27 @@ BoTSORT::track(const std::vector<Detection> &detections, const cv::Mat &frame)
 
     std::tie(iou_dists, iou_dists_mask_1st_association) =
             iou_distance(tracks_pool, detections_high_conf, _proximity_thresh);
-    fuse_score(iou_dists,
-               detections_high_conf);// Fuse the score with IoU distance
 
-    if (_reid_enabled)
-    {
-        // If re-ID is enabled, find the embedding distance between all tracked tracks and high confidence detections
-        std::tie(raw_emd_dist, emd_dist_mask_1st_association) =
-                embedding_distance(tracks_pool, detections_high_conf,
-                                   _appearance_thresh,
-                                   _reid_model->get_distance_metric());
-        fuse_motion(*_kalman_filter, raw_emd_dist, tracks_pool,
-                    detections_high_conf,
-                    _lambda);// Fuse the motion with embedding distance
-    }
+    fuse_score(iou_dists, detections_high_conf);// Fuse the score with IoU distance
 
     // Fuse the IoU distance and embedding distance to get the final distance matrix
     CostMatrix distances_first_association = fuse_iou_with_emb(
-            iou_dists, raw_emd_dist, iou_dists_mask_1st_association,
-            emd_dist_mask_1st_association);
+        iou_dists,
+        raw_emd_dist,
+        iou_dists_mask_1st_association,
+        emd_dist_mask_1st_association);
 
     // Perform linear assignment on the final distance matrix, LAPJV algorithm is used here
-    AssociationData first_associations =
-            linear_assignment(distances_first_association, _match_thresh);
-
+    AssociationData first_associations = linear_assignment(
+        distances_first_association,
+        _match_thresh);
+    
     // Update the tracks with the associated detections
     for (const std::pair<int, int> &match: first_associations.matches)
     {
         const std::shared_ptr<Track> &track = tracks_pool[match.first];
-        const std::shared_ptr<Track> &detection =
-                detections_high_conf[match.second];
-
+        const std::shared_ptr<Track> &detection = detections_high_conf[match.second];
+        
         // If track was being actively tracked, we update the track with the new associated detection
         if (track->state == TrackState::Tracked)
         {
@@ -260,8 +288,7 @@ BoTSORT::track(const std::vector<Detection> &detections, const cv::Mat &frame)
                                     detections_low_conf);
 
     // Perform linear assignment on the distance matrix, LAPJV algorithm is used here
-    AssociationData second_associations =
-            linear_assignment(iou_dists_second, 0.5);
+    AssociationData second_associations = linear_assignment(iou_dists_second, 0.5);
 
     // Update the tracks with the associated detections
     for (const std::pair<int, int> &match: second_associations.matches)
@@ -302,8 +329,7 @@ BoTSORT::track(const std::vector<Detection> &detections, const cv::Mat &frame)
 
 
     ////////////////// Deal with unconfirmed tracks //////////////////
-    std::vector<std::shared_ptr<Track>>
-            unmatched_detections_after_1st_association;
+    std::vector<std::shared_ptr<Track>> unmatched_detections_after_1st_association;
     for (int detection_idx: first_associations.unmatched_det_indices)
     {
         const std::shared_ptr<Track> &detection =
@@ -318,21 +344,7 @@ BoTSORT::track(const std::vector<Detection> &detections, const cv::Mat &frame)
     std::tie(iou_dists_unconfirmed, iou_dists_mask_unconfirmed) = iou_distance(
             unconfirmed_tracks, unmatched_detections_after_1st_association,
             _proximity_thresh);
-    fuse_score(iou_dists_unconfirmed,
-               unmatched_detections_after_1st_association);
-
-    if (_reid_enabled)
-    {
-        // Find embedding distance between unconfirmed tracks and high confidence detections left after the first association
-        std::tie(raw_emd_dist_unconfirmed, emd_dist_mask_unconfirmed) =
-                embedding_distance(unconfirmed_tracks,
-                                   unmatched_detections_after_1st_association,
-                                   _appearance_thresh,
-                                   _reid_model->get_distance_metric());
-        fuse_motion(*_kalman_filter, raw_emd_dist_unconfirmed,
-                    unconfirmed_tracks,
-                    unmatched_detections_after_1st_association, _lambda);
-    }
+    fuse_score(iou_dists_unconfirmed, unmatched_detections_after_1st_association);
 
     // Fuse the IoU distance and the embedding distance
     CostMatrix distances_unconfirmed = fuse_iou_with_emb(
@@ -357,8 +369,7 @@ BoTSORT::track(const std::vector<Detection> &detections, const cv::Mat &frame)
 
     // All the unconfirmed tracks that are not associated with any detection are marked as removed
     std::vector<std::shared_ptr<Track>> removed_tracks;
-    for (int unmatched_track_index:
-         unconfirmed_associations.unmatched_track_indices)
+    for (int unmatched_track_index: unconfirmed_associations.unmatched_track_indices)
     {
         const std::shared_ptr<Track> &track =
                 unconfirmed_tracks[unmatched_track_index];
@@ -374,13 +385,7 @@ BoTSORT::track(const std::vector<Detection> &detections, const cv::Mat &frame)
     {
         const std::shared_ptr<Track> &detection =
                 unmatched_detections_after_1st_association[detection_idx];
-        unmatched_high_conf_detections.push_back(detection);
-    }
-
-    // Initialize new tracks for the high confidence detections left after all the associations
-    for (const std::shared_ptr<Track> &detection:
-         unmatched_high_conf_detections)
-    {
+        
         if (detection->get_score() >= _new_track_thresh)
         {
             detection->activate(*_kalman_filter, _frame_id);
@@ -423,13 +428,12 @@ BoTSORT::track(const std::vector<Detection> &detections, const cv::Mat &frame)
             lost_tracks_cleaned;
     _remove_duplicate_tracks(tracked_tracks_cleaned, lost_tracks_cleaned,
                              _tracked_tracks, _lost_tracks);
-    _tracked_tracks = tracked_tracks_cleaned,
+    _tracked_tracks = tracked_tracks_cleaned;
     _lost_tracks = lost_tracks_cleaned;
     ////////////////// Clean up the track lists //////////////////
 
 
     ////////////////// Update output tracks //////////////////
-    std::vector<std::shared_ptr<Track>> output_tracks;
     for (const std::shared_ptr<Track> &track: _tracked_tracks)
     {
         if (track->is_activated)
@@ -437,30 +441,20 @@ BoTSORT::track(const std::vector<Detection> &detections, const cv::Mat &frame)
             output_tracks.push_back(track);
         }
     }
-    ////////////////// Update output tracks //////////////////
 
-    return output_tracks;
+    return;
 }
-
-
-FeatureVector BoTSORT::_extract_features(const cv::Mat &frame,
-                                         const cv::Rect_<float> &bbox_tlwh)
-{
-    cv::Mat patch = frame(bbox_tlwh);
-    return _reid_model->extract_features(patch);
-}
-
 
 std::vector<std::shared_ptr<Track>>
-BoTSORT::_merge_track_lists(std::vector<std::shared_ptr<Track>> &tracks_list_a,
+Botsort::_merge_track_lists(std::vector<std::shared_ptr<Track>> &tracks_list_a,
                             std::vector<std::shared_ptr<Track>> &tracks_list_b)
 {
-    std::map<int, bool> exists;
+    std::unordered_set<int> exists;
     std::vector<std::shared_ptr<Track>> merged_tracks_list;
 
     for (const std::shared_ptr<Track> &track: tracks_list_a)
     {
-        exists[track->track_id] = true;
+        exists.insert(track->track_id);
         merged_tracks_list.push_back(track);
     }
 
@@ -468,7 +462,7 @@ BoTSORT::_merge_track_lists(std::vector<std::shared_ptr<Track>> &tracks_list_a,
     {
         if (exists.find(track->track_id) == exists.end())
         {
-            exists[track->track_id] = true;
+            exists.insert(track->track_id);
             merged_tracks_list.push_back(track);
         }
     }
@@ -477,16 +471,16 @@ BoTSORT::_merge_track_lists(std::vector<std::shared_ptr<Track>> &tracks_list_a,
 }
 
 
-std::vector<std::shared_ptr<Track>> BoTSORT::_remove_from_list(
+std::vector<std::shared_ptr<Track>> Botsort::_remove_from_list(
         std::vector<std::shared_ptr<Track>> &tracks_list,
         std::vector<std::shared_ptr<Track>> &tracks_to_remove)
 {
-    std::map<int, bool> exists;
+    std::unordered_set<int> exists;
     std::vector<std::shared_ptr<Track>> new_tracks_list;
 
     for (const std::shared_ptr<Track> &track: tracks_to_remove)
     {
-        exists[track->track_id] = true;
+        exists.insert(track->track_id);
     }
 
     for (const std::shared_ptr<Track> &track: tracks_list)
@@ -501,7 +495,7 @@ std::vector<std::shared_ptr<Track>> BoTSORT::_remove_from_list(
 }
 
 
-void BoTSORT::_remove_duplicate_tracks(
+void Botsort::_remove_duplicate_tracks(
         std::vector<std::shared_ptr<Track>> &result_tracks_a,
         std::vector<std::shared_ptr<Track>> &result_tracks_b,
         std::vector<std::shared_ptr<Track>> &tracks_list_a,
@@ -524,13 +518,13 @@ void BoTSORT::_remove_duplicate_tracks(
                 // We make an assumption that the longer trajectory is the correct one
                 if (time_a > time_b)
                 {
-                    dup_b.insert(
-                            j);// In list b, track with index j is a duplicate
+                    // In list b, track with index j is a duplicate
+                    dup_b.insert(j);
                 }
                 else
                 {
-                    dup_a.insert(
-                            i);// In list a, track with index i is a duplicate
+                    // In list a, track with index i is a duplicate
+                    dup_a.insert(i);
                 }
             }
         }
@@ -554,7 +548,7 @@ void BoTSORT::_remove_duplicate_tracks(
     }
 }
 
-void BoTSORT::_load_params_from_config(const TrackerParams &config)
+void Botsort::_load_params_from_config(const TrackerParams &config)
 {
     _reid_enabled = config.reid_enabled;
     _gmc_enabled = config.gmc_enabled;
@@ -568,4 +562,26 @@ void BoTSORT::_load_params_from_config(const TrackerParams &config)
     _gmc_method_name = config.gmc_method_name;
     _frame_rate = config.frame_rate;
     _lambda = config.lambda;
+}
+
+PYBIND11_MODULE(_botsort, m, py::multiple_interpreters::per_interpreter_gil()){
+    auto config = m.def_submodule("configs", "All Config Classes for BotSort");
+    bind_tracker_params(config);
+    bind_gmc_configs(config);
+    bind_gmc_method_enum(config);
+
+    py::class_<Botsort, py::smart_holder>(m, "BotSort")
+        .def(py::init<Config<TrackerParams>, Config<GMC_Params>>())
+        .def("track", static_cast<py::array_t<float> (Botsort::*) 
+                      (const py::array_t<float> &/* bounding boxes */, 
+                       const py::array_t<float> &/* scores */,
+                       const py::array_t<uint8_t> &/*class ids*/,
+                       const py::array_t<uint8_t> &)> (&Botsort::track),
+                    "BotSort entry/forward function.\n"
+                    "\tParams:"
+                    "\t\t Bounding Boxes. 1D numpy float array with size divisible by 4"
+                    "\t\t Scores. 1D numpy float array"
+                    "\t\t Class Ids. 1D numpy uint8 int array"
+                    "\tReturns:"
+                    "\t\t1D numpy array of IDs in order of class ids input");
 }

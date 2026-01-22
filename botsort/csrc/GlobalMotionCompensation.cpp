@@ -1,4 +1,4 @@
-#include "GlobalMotionCompensation.h"
+#include "include/GlobalMotionCompensation.h"
 
 #include <opencv2/videostab/global_motion.hpp>
 #include <opencv2/videostab/motion_core.hpp>
@@ -56,10 +56,10 @@ GlobalMotionCompensation::GlobalMotionCompensation(const GMC_Params &gmc_params)
 
 
 HomographyMatrix
-GlobalMotionCompensation::apply(const cv::Mat &frame,
-                                const std::vector<Detection> &detections)
+GlobalMotionCompensation::apply(const cv::Mat &frame_raw,
+                                std::span<const float> &box_tlwh)
 {
-    return _gmc_algorithm->apply(frame, detections);
+    return _gmc_algorithm->apply(frame_raw, box_tlwh);
 }
 
 
@@ -84,7 +84,7 @@ void ORB_GMC::_load_params_from_config(const ORB_Params &config)
 
 
 HomographyMatrix ORB_GMC::apply(const cv::Mat &frame_raw,
-                                const std::vector<Detection> &detections)
+                                std::span<const float> &box_tlwh)
 {
     // Initialization
     int height = frame_raw.rows;
@@ -114,13 +114,13 @@ HomographyMatrix ORB_GMC::apply(const cv::Mat &frame_raw,
 
     // Set all the foreground (area with detections) to 0
     // This is to prevent the algorithm from detecting keypoints in the foreground so CMC can work better
-    for (const auto &det: detections)
+    for (size_t i = 0; i < box_tlwh.size(); i += 4)
     {
         cv::Rect tlwh_downscaled(
-                static_cast<int>(det.bbox_tlwh.x / _downscale),
-                static_cast<int>(det.bbox_tlwh.y / _downscale),
-                static_cast<int>(det.bbox_tlwh.width / _downscale),
-                static_cast<int>(det.bbox_tlwh.height / _downscale));
+                static_cast<int>(box_tlwh[0 + i] / _downscale),
+                static_cast<int>(box_tlwh[1 + i] / _downscale),
+                static_cast<int>(box_tlwh[2 + i] / _downscale),
+                static_cast<int>(box_tlwh[3 + i] / _downscale));
         mask(tlwh_downscaled) = 0;
     }
 
@@ -141,9 +141,9 @@ HomographyMatrix ORB_GMC::apply(const cv::Mat &frame_raw,
          *  Save the keypoints and descriptors, return identity matrix 
          */
         _first_frame_initialized = true;
-        _prev_frame = frame.clone();
+        _prev_frame = frame/*.clone()*/;
         _prev_keypoints = keypoints;
-        _prev_descriptors = descriptors.clone();
+        _prev_descriptors = descriptors/*.clone()*/;
         return H;
     }
 
@@ -185,9 +185,9 @@ HomographyMatrix ORB_GMC::apply(const cv::Mat &frame_raw,
     // If couldn't find any matches, return identity matrix
     if (matches.empty())
     {
-        _prev_frame = frame.clone();
+        _prev_frame = frame/*.clone()*/;
         _prev_keypoints = keypoints;
-        _prev_descriptors = descriptors.clone();
+        _prev_descriptors = descriptors/*.clone()*/;
         return H;
     }
 
@@ -226,11 +226,11 @@ HomographyMatrix ORB_GMC::apply(const cv::Mat &frame_raw,
         if (inlier_ratio > _inlier_ratio)
         {
             cv2eigen(homography, H);
-            if (_downscale > 1.0)
-            {
-                H(0, 2) *= _downscale;
-                H(1, 2) *= _downscale;
-            }
+            //if (_downscale > 1.0)
+            //{
+            H(0, 2) *= _downscale;
+            H(1, 2) *= _downscale;
+            //}
         }
         else
         {
@@ -268,9 +268,9 @@ HomographyMatrix ORB_GMC::apply(const cv::Mat &frame_raw,
 
 
     // Update previous frame, keypoints and descriptors
-    _prev_frame = frame.clone();
+    _prev_frame = frame/*.clone()*/;
     _prev_keypoints = keypoints;
-    _prev_descriptors = descriptors.clone();
+    _prev_descriptors = descriptors/*.clone()*/;
     return H;
 }
 
@@ -295,7 +295,7 @@ void ECC_GMC::_load_params_from_config(const ECC_Params &config)
 
 
 HomographyMatrix ECC_GMC::apply(const cv::Mat &frame_raw,
-                                const std::vector<Detection> &detections)
+                                std::span<const float> &box_tlwh)
 {
     // Initialization
     int height = frame_raw.rows;
@@ -323,7 +323,7 @@ HomographyMatrix ECC_GMC::apply(const cv::Mat &frame_raw,
          *  Save the keypoints and descriptors, return identity matrix
          */
         _first_frame_initialized = true;
-        _prev_frame = frame.clone();
+        _prev_frame = frame/*.clone()*/;
         return H;
     }
 
@@ -338,13 +338,12 @@ HomographyMatrix ECC_GMC::apply(const cv::Mat &frame_raw,
                              _termination_criteria, cv::noArray(), 1);
 #endif
         cv2eigen(H_cvMat, H);
-        _prev_frame = frame.clone();
+        _prev_frame = frame/*.clone()*/;
     }
     catch (const cv::Exception &e)
     {
         std::cout << "Warning: Could not estimate affine matrix" << std::endl;
     }
-
 
     return H;
 }
@@ -379,7 +378,7 @@ void SparseOptFlow_GMC::_load_params_from_config(
 
 HomographyMatrix
 SparseOptFlow_GMC::apply(const cv::Mat &frame_raw,
-                         const std::vector<Detection> &detections)
+                         std::span<const float> &box_tlwh)
 {
     // Initialization
     int height = frame_raw.rows;
@@ -460,11 +459,11 @@ SparseOptFlow_GMC::apply(const cv::Mat &frame_raw,
         if (inlier_ratio > _inlier_ratio)
         {
             cv2eigen(homography, H);
-            if (_downscale > 1.0)
-            {
-                H(0, 2) *= _downscale;
-                H(1, 2) *= _downscale;
-            }
+            //if (_downscale > 1.0)
+            //{
+            H(0, 2) *= _downscale;
+            H(1, 2) *= _downscale;
+            //}
         }
         else
         {
@@ -507,7 +506,7 @@ void OpenCV_VideoStab_GMC::_load_params_from_config(
 
 HomographyMatrix
 OpenCV_VideoStab_GMC::apply(const cv::Mat &frame_raw,
-                            const std::vector<Detection> &detections)
+                            std::span<const float> &box_tlwh)
 {
     // Initialization
     int height = frame_raw.rows;
@@ -515,7 +514,7 @@ OpenCV_VideoStab_GMC::apply(const cv::Mat &frame_raw,
 
     HomographyMatrix H;
     H.setIdentity();
-    cv::Mat frame = frame_raw.clone();
+    cv::Mat frame = frame_raw/*.clone()*/;
 
     if (frame_raw.empty())
     {
@@ -523,11 +522,11 @@ OpenCV_VideoStab_GMC::apply(const cv::Mat &frame_raw,
     }
 
     // Downscale
-    if (_downscale > 1.0F)
-    {
-        width /= _downscale, height /= _downscale;
-        cv::resize(frame_raw, frame, cv::Size(width, height));
-    }
+    //if (_downscale > 1.0F) should be handled earlier
+    //{
+    width /= _downscale, height /= _downscale;
+    cv::resize(frame_raw, frame, cv::Size(width, height));
+    //}
 
     cv::Mat homography = cv::Mat::eye(3, 3, CV_32F);
 
@@ -536,13 +535,13 @@ OpenCV_VideoStab_GMC::apply(const cv::Mat &frame_raw,
         if (_detections_masking)
         {
             cv::Mat mask = cv::Mat::zeros(frame.size(), CV_8U);
-            for (const Detection &detection: detections)
+            for (size_t i = 0; i < box_tlwh.size(); i += 4)
             {
-                cv::Rect rect = detection.bbox_tlwh;
-                rect.x /= _downscale;
-                rect.y /= _downscale;
-                rect.width /= _downscale;
-                rect.height /= _downscale;
+                cv::Rect rect(
+                static_cast<int>(box_tlwh[0 + i] / _downscale),
+                static_cast<int>(box_tlwh[1 + i] / _downscale),
+                static_cast<int>(box_tlwh[2 + i] / _downscale),
+                static_cast<int>(box_tlwh[3 + i] / _downscale));
                 mask(rect) = 255;
             }
 
@@ -585,8 +584,8 @@ void OptFlowModified_GMC::_load_params_from_config(
 
 
 HomographyMatrix
-OptFlowModified_GMC::apply(const cv::Mat &frame,
-                           const std::vector<Detection> &detections)
+OptFlowModified_GMC::apply(const cv::Mat &frame_raw,
+                           std::span<const float> &box_tlwh)
 {
     HomographyMatrix H;
     H.setIdentity();

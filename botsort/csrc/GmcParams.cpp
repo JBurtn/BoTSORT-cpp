@@ -1,9 +1,9 @@
-#include "GmcParams.h"
+#include "include/GmcParams.h"
 
 #include <iostream>
 
-#include "DataType.h"
-#include "INIReader.h"
+#include "include/DataType.h"
+#include "include/INIReader.h"
 
 constexpr std::size_t NUM_METHODS{5};
 
@@ -83,6 +83,7 @@ GMC_Params::MethodParams load_videostab_config(INIReader &gmc_config)
 
     return params;
 }
+
 }// namespace
 
 GMC_Params GMC_Params::load_config(GMC_Method method,

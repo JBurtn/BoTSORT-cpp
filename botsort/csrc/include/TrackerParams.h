@@ -1,6 +1,10 @@
 #pragma once
 
 #include <string>
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+
+namespace py = pybind11;
 
 struct TrackerParams
 {
@@ -19,3 +23,6 @@ struct TrackerParams
 
     static TrackerParams load_config(const std::string &config_path);
 };
+
+
+void bind_tracker_params(py::module_ &m);

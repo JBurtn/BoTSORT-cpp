@@ -1,39 +1,54 @@
 #pragma once
 
+#include <pybind11/pybind11.h>
+#include <pybind11/numpy.h>
+#include <pybind11/stl.h>
+
+#include <array>
 #include <string>
 #include <variant>
 
 #include "GlobalMotionCompensation.h"
 #include "GmcParams.h"
-#include "ReID.h"
-#include "ReIDParams.h"
 #include "TrackerParams.h"
 #include "track.h"
 
 template<typename T>
 using Config = std::variant<T, std::string, std::monostate>;
-
-class BoTSORT
+namespace py = pybind11;
+class Botsort
 {
 public:
-    explicit BoTSORT(const Config<TrackerParams> &tracker_config,
-                     const Config<GMC_Params> &gmc_config = {},
-                     const Config<ReIDParams> &reid_config = {},
-                     const std::string &reid_onnx_model_path = "");
+    explicit Botsort(const Config<TrackerParams> &tracker_config,
+                     const Config<GMC_Params> &gmc_config = {});
+                     //const Config<ReIDParams> &reid_config = {},
+                     //const std::string &reid_onnx_model_path = "");
 
-    ~BoTSORT() = default;
+    ~Botsort() = default;
 
 
     /**
      * @brief Track the objects in the frame
      * 
-     * @param detections Detections in the frame
+     * @param box_tlwh Bounding box (top, left, width, height)
+     * @param score scores for the bounding boxes.
+     * @param class_ids class_ids for the bounding boxes. Used for output order
      * @param frame Frame
      * @return std::vector<std::shared_ptr<Track>> 
      */
-    std::vector<std::shared_ptr<Track>>
-    track(const std::vector<Detection> &detections, const cv::Mat &frame);
-
+    
+    void
+    track(std::span<const float> &box_tlwh,
+          std::span<const float> &score,
+          std::span<const uint8_t> &class_ids,
+          const cv::Mat &frame,
+          std::vector<std::shared_ptr<Track>> &output_tracks);
+    
+    py::array_t<float>
+    track(const py::array_t<float> &box_tlwh,
+          const py::array_t<float> &score,
+          const py::array_t<uint8_t> &class_ids,
+          const py::array_t<uint8_t> &frame);
 
 private:
     /**
@@ -43,8 +58,8 @@ private:
      * @param bbox_tlwh Bounding box (top, left, width, height)
      * @return FeatureVector Extracted visual features
      */
-    FeatureVector _extract_features(const cv::Mat &frame,
-                                    const cv::Rect_<float> &bbox_tlwh);
+    // FeatureVector _extract_features(const cv::Mat &frame,
+    //                                 const cv::Rect_<float> &bbox_tlwh);
 
     /**
      * @brief Merge the given track lists
@@ -106,5 +121,5 @@ private:
 
     std::unique_ptr<KalmanFilter> _kalman_filter;
     std::unique_ptr<GlobalMotionCompensation> _gmc_algo;
-    std::unique_ptr<ReIDModel> _reid_model;
+    //std::unique_ptr<ReIDModel> _reid_model;
 };

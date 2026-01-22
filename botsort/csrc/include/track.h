@@ -2,6 +2,7 @@
 
 #include <deque>
 #include <memory>
+#include <unordered_set>
 
 #include "KalmanFilter.h"
 #include "KalmanFilterAccBased.h"
@@ -29,7 +30,9 @@ public:
      * @param feat (Optional) Detection feature vector
      * @param feat_history_size Size of the feature history (default: 50)
      */
-    Track(std::vector<float> tlwh, float score, uint8_t class_id,
+    Track(std::vector<float> tlwh,
+          float score,
+          uint8_t class_id,
           std::optional<FeatureVector> feat = std::nullopt,
           int feat_history_size = 50);
 
@@ -68,7 +71,7 @@ public:
     /**
      * @brief Get the latest detection bounding box in the format [top-left-x, top-left-y, width, height]
      */
-    std::vector<float> get_tlwh() const;
+    const std::vector<float>& get_tlwh() const;
 
     /**
      * @brief Get the score object
@@ -190,18 +193,21 @@ public:
     uint32_t frame_id, tracklet_len, start_frame;
 
     std::vector<float> det_tlwh;
-    std::shared_ptr<FeatureVector> curr_feat;
-    std::unique_ptr<FeatureVector> smooth_feat;
+    //std::shared_ptr<FeatureVector> curr_feat;
+    //std::unique_ptr<FeatureVector> smooth_feat;
     KFStateSpaceVec mean;
     KFStateSpaceMatrix covariance;
 
 private:
     std::vector<float> _tlwh;
-    std::vector<std::pair<uint8_t, float>> _class_hist;
     float _score;
     uint8_t _class_id;
     static constexpr float _alpha = 0.9;
 
     int _feat_history_size;
     std::deque<std::shared_ptr<FeatureVector>> _feat_history;
+    
+    float max_value = 0;
+    //std::unordered_set<uint8_t> max_ids;
+    std::unordered_map<uint8_t, float> viewed_class_ids;
 };

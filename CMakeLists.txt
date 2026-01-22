@@ -1,11 +1,5 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 3.16)
 
-# Set project name
-project(botsort_tracker_example VERSION 0.1.0 LANGUAGES CXX)
-
-# Build options
-option(BUILD_EXAMPLES "Build examples" ON)
-
 # Set Build Type if not set
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
@@ -14,7 +8,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 # Set C++ standard
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -32,7 +26,3 @@ find_package(Eigen3 REQUIRED)
 
 # add botsort
 add_subdirectory(botsort)
-
-if(BUILD_EXAMPLES)
-    add_subdirectory(examples)
-endif()

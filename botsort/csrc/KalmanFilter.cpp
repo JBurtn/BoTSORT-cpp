@@ -1,4 +1,4 @@
-#include "KalmanFilter.h"
+#include "include/KalmanFilter.h"
 
 #include <eigen3/Eigen/Cholesky>
 
@@ -37,10 +37,10 @@ KFDataStateSpace KalmanFilter::init(const DetVec &measurement) const
 
     float w = measurement(2), h = measurement(3);
     KFStateSpaceVec std_dev;
-    std_dev.head<4>() =
-            2 * _std_weight_position * (Eigen::Vector4f(w, h, w, h).array());
-    std_dev.tail<4>() =
-            10 * _std_weight_velocity * (Eigen::Vector4f(w, h, w, h).array());
+    std_dev << 2 * _std_weight_position * w, 2 * _std_weight_position * h,
+               2 * _std_weight_position * w, 2 * _std_weight_position * h,
+               10 * _std_weight_velocity * w, 10 * _std_weight_velocity * h,
+               10 * _std_weight_velocity * w, 10 * _std_weight_velocity * h;
 
     KFStateSpaceMatrix covariance =
             std_dev.array().square().matrix().asDiagonal();
@@ -50,18 +50,17 @@ KFDataStateSpace KalmanFilter::init(const DetVec &measurement) const
 void KalmanFilter::predict(KFStateSpaceVec &mean,
                            KFStateSpaceMatrix &covariance)
 {
-    Eigen::VectorXf std_combined;
-    std_combined.resize(KALMAN_STATE_SPACE_DIM);
-    std_combined << mean(2), mean(3), mean(2), mean(3), mean(2), mean(3),
-            mean(2), mean(3);
-    std_combined.head<4>().array() *= _std_weight_position;
-    std_combined.tail<4>().array() *= _std_weight_velocity;
+    Eigen::Matrix<float, KALMAN_STATE_SPACE_DIM, 1> std_combined;
+    std_combined << mean(2) * _std_weight_position, mean(3) * _std_weight_position,
+                    mean(2) * _std_weight_position, mean(3) * _std_weight_position,
+                    mean(2) * _std_weight_velocity, mean(3) * _std_weight_velocity,
+                    mean(2) * _std_weight_velocity, mean(3) * _std_weight_velocity;
+    
     KFStateSpaceMatrix motion_cov =
             std_combined.array().square().matrix().asDiagonal();
 
-    mean = _state_transition_matrix.lazyProduct(mean.transpose());
-    covariance = (_state_transition_matrix * covariance)
-                         .lazyProduct(_state_transition_matrix.transpose()) +
+    mean = _state_transition_matrix * mean.transpose();
+    covariance = (_state_transition_matrix * covariance * _state_transition_matrix.transpose()) +
                  motion_cov;
 }
 
@@ -77,12 +76,11 @@ KalmanFilter::project(const KFStateSpaceVec &mean,
                     .matrix();
     KFMeasSpaceMatrix innovation_cov_diag = innovation_cov.asDiagonal();
 
-    KFMeasSpaceVec mean_projected =
-            _measurement_matrix.lazyProduct(mean.transpose());
+    KFMeasSpaceVec mean_projected = _measurement_matrix * mean.transpose();
     KFMeasSpaceMatrix covariance_projected =
-            (_measurement_matrix * covariance)
-                    .lazyProduct(_measurement_matrix.transpose()) +
-            innovation_cov_diag;
+        (_measurement_matrix * covariance * _measurement_matrix.transpose())
+        + innovation_cov_diag;
+    
     return {mean_projected, covariance_projected};
 }
 
@@ -108,7 +106,7 @@ KFDataStateSpace KalmanFilter::update(const KFStateSpaceVec &mean,
     return {mean_updated, covariance_updated};
 }
 
-
+//Unused when ReID is false
 Eigen::Matrix<float, 1, Eigen::Dynamic> KalmanFilter::gating_distance(
         const KFStateSpaceVec &mean, const KFStateSpaceMatrix &covariance,
         const std::vector<DetVec> &measurements, bool only_position) const
@@ -128,7 +126,7 @@ Eigen::Matrix<float, 1, Eigen::Dynamic> KalmanFilter::gating_distance(
             measurements.size());
     mahalanobis_distances.setZero();
 
-    for (Eigen::Index i = 0; i < measurements.size(); i++)
+    for (size_t i = 0; i < measurements.size(); i++)
     {
         Eigen::VectorXf diff = measurements[i] - projected_mean;
         // Solve for y in Ly = diff using forward substitution, more efficient than computing the inverse

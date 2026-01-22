@@ -1,7 +1,7 @@
-#include "matching.h"
+#include "include/matching.h"
 
-#include "DataType.h"
-#include "utils.h"
+#include "include/DataType.h"
+#include "include/utils.h"
 
 std::tuple<CostMatrix, CostMatrix>
 iou_distance(const std::vector<std::shared_ptr<Track>> &tracks,
@@ -20,9 +20,9 @@ iou_distance(const std::vector<std::shared_ptr<Track>> &tracks,
 
     if (num_tracks > 0 && num_detections > 0)
     {
-        for (int i = 0; i < num_tracks; i++)
+        for (size_t i = 0; i < num_tracks; i++)
         {
-            for (int j = 0; j < num_detections; j++)
+            for (size_t j = 0; j < num_detections; j++)
             {
                 cost_matrix(i, j) = 1.0F - iou(tracks[i]->get_tlwh(),
                                                detections[j]->get_tlwh());
@@ -49,9 +49,9 @@ CostMatrix iou_distance(const std::vector<std::shared_ptr<Track>> &tracks,
                                   static_cast<Eigen::Index>(num_detections));
     if (num_tracks > 0 && num_detections > 0)
     {
-        for (int i = 0; i < num_tracks; i++)
+        for (size_t i = 0; i < num_tracks; i++)
         {
-            for (int j = 0; j < num_detections; j++)
+            for (size_t j = 0; j < num_detections; j++)
             {
                 cost_matrix(i, j) = 1.0F - iou(tracks[i]->get_tlwh(),
                                                detections[j]->get_tlwh());
@@ -62,7 +62,8 @@ CostMatrix iou_distance(const std::vector<std::shared_ptr<Track>> &tracks,
     return cost_matrix;
 }
 
-std::tuple<CostMatrix, CostMatrix>
+//Unused when ReID is false
+/* std::tuple<CostMatrix, CostMatrix>
 embedding_distance(const std::vector<std::shared_ptr<Track>> &tracks,
                    const std::vector<std::shared_ptr<Track>> &detections,
                    float max_embedding_distance,
@@ -89,9 +90,9 @@ embedding_distance(const std::vector<std::shared_ptr<Track>> &tracks,
 
     if (num_tracks > 0 && num_detections > 0)
     {
-        for (int i = 0; i < num_tracks; i++)
+        for (size_t i = 0; i < num_tracks; i++)
         {
-            for (int j = 0; j < num_detections; j++)
+            for (size_t j = 0; j < num_detections; j++)
             {
                 if (distance_metric == "euclidean")
                     cost_matrix(i, j) = std::max(
@@ -111,27 +112,23 @@ embedding_distance(const std::vector<std::shared_ptr<Track>> &tracks,
     }
 
     return {cost_matrix, embedding_dists_mask};
-}
+} */
 
 void fuse_score(CostMatrix &cost_matrix,
                 const std::vector<std::shared_ptr<Track>> &detections)
 {
     if (cost_matrix.rows() == 0 || cost_matrix.cols() == 0)
-    {
-        return;
-    }
+    {return;}
 
-    for (Eigen::Index i = 0; i < cost_matrix.rows(); i++)
-    {
-        for (Eigen::Index j = 0; j < cost_matrix.cols(); j++)
-        {
-            cost_matrix(i, j) = 1.0F - ((1.0F - cost_matrix(i, j)) *
-                                        detections[j]->get_score());
-        }
-    }
+    Eigen::VectorXf scores(cost_matrix.cols());
+    for (Eigen::Index j = 0; j < scores.cols(); j++)
+        scores(j) = detections[j]->get_score();
+    
+    cost_matrix = (1.0F - ((1.0F - cost_matrix.array()).colwise() * scores.array())).matrix();
 }
 
-void fuse_motion(const KalmanFilter &KF, CostMatrix &cost_matrix,
+//Unused when ReID is false
+/* void fuse_motion(const KalmanFilter &KF, CostMatrix &cost_matrix,
                  const std::vector<std::shared_ptr<Track>> &tracks,
                  const std::vector<std::shared_ptr<Track>> &detections,
                  float lambda, bool only_position)
@@ -155,7 +152,7 @@ void fuse_motion(const KalmanFilter &KF, CostMatrix &cost_matrix,
         measurements.emplace_back(det);
     }
 
-    for (Eigen::Index i = 0; i < tracks.size(); i++)
+    for (size_t i = 0; i < tracks.size(); i++)
     {
         Eigen::Matrix<float, 1, Eigen::Dynamic> gating_distance =
                 KF.gating_distance(tracks[i]->mean, tracks[i]->covariance,
@@ -172,7 +169,7 @@ void fuse_motion(const KalmanFilter &KF, CostMatrix &cost_matrix,
                                 (1 - lambda) * gating_distance[j];
         }
     }
-}
+} */
 
 CostMatrix fuse_iou_with_emb(CostMatrix &iou_dist, CostMatrix &emb_dist,
                              const CostMatrix &iou_dists_mask,
@@ -180,7 +177,9 @@ CostMatrix fuse_iou_with_emb(CostMatrix &iou_dist, CostMatrix &emb_dist,
 {
 
     if (emb_dist.rows() == 0 || emb_dist.cols() == 0)
-    {
+    {   
+        
+        // iou_dist = iou_dist.select(1.0F, iou_dists_mask.cast<bool>());
         // Embedding distance is not available, mask off iou distance
         for (Eigen::Index i = 0; i < iou_dist.rows(); i++)
         {
@@ -195,6 +194,7 @@ CostMatrix fuse_iou_with_emb(CostMatrix &iou_dist, CostMatrix &emb_dist,
         return iou_dist;
     }
 
+    //emb_dist = emb_dist.select(1.0F, iou_dists_mask.cast<bool>());
     // If IoU distance is larger than threshold, don't use embedding at all
     for (Eigen::Index i = 0; i < iou_dist.rows(); i++)
     {
@@ -207,6 +207,7 @@ CostMatrix fuse_iou_with_emb(CostMatrix &iou_dist, CostMatrix &emb_dist,
         }
     }
 
+    //emb_dist = emb_dist.select(1.0F, emb_dists_mask.cast<bool>());
     // If emb distance is larger than threshold, set the emb distance to inf
     for (Eigen::Index i = 0; i < emb_dist.rows(); i++)
     {
@@ -220,7 +221,7 @@ CostMatrix fuse_iou_with_emb(CostMatrix &iou_dist, CostMatrix &emb_dist,
     }
 
     // Fuse iou and emb distance by taking the element-wise minimum
-    CostMatrix cost_matrix =
+    CostMatrix cost_matrix = /*iou_dist.cwiseMin(emb_dist);*/
             Eigen::MatrixXf::Zero(iou_dist.rows(), iou_dist.cols());
     for (Eigen::Index i = 0; i < iou_dist.rows(); i++)
     {
@@ -240,12 +241,12 @@ AssociationData linear_assignment(CostMatrix &cost_matrix, float thresh)
 
     if (cost_matrix.size() == 0)
     {
-        for (int i = 0; i < cost_matrix.rows(); i++)
+        for (Eigen::Index i = 0; i < cost_matrix.rows(); i++)
         {
             associations.unmatched_track_indices.emplace_back(i);
         }
 
-        for (int i = 0; i < cost_matrix.cols(); i++)
+        for (Eigen::Index i = 0; i < cost_matrix.cols(); i++)
         {
             associations.unmatched_det_indices.emplace_back(i);
         }
@@ -254,9 +255,14 @@ AssociationData linear_assignment(CostMatrix &cost_matrix, float thresh)
     }
 
     std::vector<int> rowsol, colsol;
-    double total_cost = lapjv(cost_matrix, rowsol, colsol, true, thresh);
-
-    for (int i = 0; i < rowsol.size(); i++)
+    lapjv(
+        cost_matrix,
+        rowsol, colsol, 
+        true, 
+        thresh,
+        false);
+    
+    for (size_t i = 0; i < rowsol.size(); i++)
     {
         if (rowsol[i] >= 0)
         {
@@ -268,7 +274,7 @@ AssociationData linear_assignment(CostMatrix &cost_matrix, float thresh)
         }
     }
 
-    for (int i = 0; i < colsol.size(); i++)
+    for (size_t i = 0; i < colsol.size(); i++)
     {
         if (colsol[i] < 0)
         {

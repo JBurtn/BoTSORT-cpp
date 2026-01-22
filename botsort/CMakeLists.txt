@@ -1,9 +1,9 @@
 CMAKE_MINIMUM_REQUIRED(VERSION 3.16)
 
-PROJECT(botsort VERSION 1.0 LANGUAGES CXX)
+PROJECT(_botsort VERSION 1.0 LANGUAGES CXX)
 
 # Set C++ Standard
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Set Build Type if not set
@@ -14,10 +14,26 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 # Collect all source files
-file(GLOB_RECURSE SOURCES "${PROJECT_SOURCE_DIR}/src/*.cpp")
+file(GLOB_RECURSE SOURCES "${PROJECT_SOURCE_DIR}/csrc/*.cpp")
 
 # Create library
-add_library(${PROJECT_NAME} SHARED ${SOURCES})
+#add_library(${PROJECT_NAME} SHARED ${SOURCES})
+
+# Find Python
+find_package(Python COMPONENTS Interpreter Development REQUIRED)
+
+# Add Pybind11
+execute_process(
+    COMMAND python -m pybind11 --cmakedir
+    OUTPUT_VARIABLE PYBIND11_DIR
+    ECHO_OUTPUT_VARIABLE
+)
+set(pybind11_DIR ${PYBIND11_DIR})
+list(APPEND CMAKE_PREFIX_PATH ${PYBIND11_DIR})
+find_package(pybind11 CONFIG REQUIRED)
+
+# Add your target
+pybind11_add_module(_botsort MODULE ${SOURCES})
 
 # Set include directories
 target_include_directories(${PROJECT_NAME} PUBLIC
@@ -28,32 +44,12 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 # Find and link OpenCV
 find_package(OpenCV REQUIRED)
 target_include_directories(${PROJECT_NAME} PUBLIC ${OpenCV_INCLUDE_DIRS})
-target_link_libraries(${PROJECT_NAME} ${OpenCV_LIBS})
+target_link_libraries(${PROJECT_NAME} PUBLIC ${OpenCV_LIBS})
 
 # Find and link Eigen3
 find_package(Eigen3 REQUIRED)
 target_include_directories(${PROJECT_NAME} PUBLIC ${EIGEN3_INCLUDE_DIR})
-target_link_libraries(${PROJECT_NAME} Eigen3::Eigen)
-
-# Find and link Boost
-find_package(Boost REQUIRED COMPONENTS filesystem)
-target_include_directories(${PROJECT_NAME} PUBLIC ${Boost_INCLUDE_DIRS})
-target_link_libraries(${PROJECT_NAME} ${Boost_LIBRARIES})
-
-# Find and link CUDA
-find_package(CUDA QUIET)
-
-if(NOT ${CUDA_FOUND})
-    message(WARNING "CUDA not found, ReID won't be built")
-else()
-    message(STATUS "CUDA version ${CUDA_VERSION_STRING} found")
-    target_include_directories(${PROJECT_NAME} PUBLIC ${CUDA_INCLUDE_DIRS})
-
-    target_sources(${PROJECT_NAME} PRIVATE
-        ${PROJECT_SOURCE_DIR}/src/TRT_InferenceEngine/TensorRT_InferenceEngine.cpp
-        ${PROJECT_SOURCE_DIR}/src/ReID.cpp)
-    target_link_libraries(${PROJECT_NAME} ${CUDA_LIBRARIES} nvonnxparser nvinfer)
-endif()
+target_link_libraries(${PROJECT_NAME} PUBLIC Eigen3::Eigen)
 
 if(CMAKE_BUILD_TYPE MATCHES Debug)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pg")

@@ -27,12 +27,6 @@ using DetVec = Eigen::Matrix<float, 1, DET_ELEMENTS>;
  * int class_id: Class ID of the detection
  * float confidence: Confidence score of the detection
  */
-struct Detection
-{
-    cv::Rect_<float> bbox_tlwh;
-    int class_id;
-    float confidence;
-};
 
 
 // Re-ID Features
@@ -106,6 +100,6 @@ using CostMatrix = Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic>;
 struct AssociationData
 {
     std::vector<MatchData> matches;///< Matched track and detection pairs.
-    std::vector<int> unmatched_track_indices;///< Unmatched track indices.
-    std::vector<int> unmatched_det_indices;  ///< Unmatched detection indices
+    std::vector<size_t> unmatched_track_indices;///< Unmatched track indices.
+    std::vector<size_t> unmatched_det_indices;  ///< Unmatched detection indices
 };

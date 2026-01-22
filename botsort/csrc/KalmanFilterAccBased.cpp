@@ -1,4 +1,4 @@
-#include "KalmanFilterAccBased.h"
+#include "include/KalmanFilterAccBased.h"
 
 #include <eigen3/Eigen/Cholesky>
 
@@ -156,7 +156,7 @@ Eigen::Matrix<float, 1, Eigen::Dynamic> KalmanFilter::gating_distance(
             measurements.size());
     mahalanobis_distances.setZero();
 
-    for (Eigen::Index i = 0; i < measurements.size(); i++)
+    for (size_t i = 0; i < measurements.size(); i++)
     {
         Eigen::VectorXf diff = measurements[i] - projected_mean;
         // Solve for y in Ly = diff using forward substitution, more efficient than computing the inverse
