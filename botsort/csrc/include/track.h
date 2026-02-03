@@ -35,14 +35,7 @@ public:
           uint8_t class_id,
           std::optional<FeatureVector> feat = std::nullopt,
           int feat_history_size = 50);
-
-    /**
-     * @brief Get the next track ID
-     * 
-     * @return int Next track ID
-     */
-    static int next_id();
-
+    
     /**
      * @brief Get end frame-id of the track
      * 
@@ -83,17 +76,22 @@ public:
     /**
      * @brief Get the class ID of the track
      * 
-     * @return uint8_t Class ID of the track
+     * @return int64_t Class ID of the track
      */
-    uint8_t get_class_id() const;
+    int64_t get_class_id() const;
 
     /**
      * @brief Activates the track
      * 
      * @param kalman_filter Kalman filter object for the track
      * @param frame_id Current frame-id
+     * @param id_counter Counter for assigning new IDs
      */
-    void activate(KalmanFilter &kalman_filter, uint32_t frame_id);
+    void activate(
+        KalmanFilter &kalman_filter,
+        uint32_t frame_id,
+        uint32_t &id_counter
+    );
 
     /**
      * @brief Re-activates the track
@@ -101,10 +99,16 @@ public:
      * @param kalman_filter Kalman filter object
      * @param new_track New track object
      * @param frame_id Current frame-id
+     * @param id_counter Counter for assigning new IDs
      * @param new_id Whether to assign a new ID to the track (default: false)
      */
-    void re_activate(KalmanFilter &kalman_filter, Track &new_track,
-                     uint32_t frame_id, bool new_id = false);
+    void re_activate(
+        KalmanFilter &kalman_filter, 
+        Track &new_track,
+        uint32_t frame_id,
+        uint32_t &id_counter,
+        bool new_id = false
+    );
 
     /**
      * @brief Predict the next state of the track using the Kalman filter
@@ -201,7 +205,7 @@ public:
 private:
     std::vector<float> _tlwh;
     float _score;
-    uint8_t _class_id;
+    int64_t _class_id;
     static constexpr float _alpha = 0.9;
 
     int _feat_history_size;

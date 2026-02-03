@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from enum import IntEnum
 from typing import Any, Callable, ClassVar, TypeVar
 from botsort._botsort import configs as configs
@@ -24,7 +24,7 @@ class BotSortConfig:
         self.gmc_method_name = gmcMethod.name
 
     def c_init(self) -> dict[str, Any]:
-        _c_init = configs.trackerParams(*vars(self).values())
+        _c_init = configs.trackerParams(*asdict(self).values())
         return _c_init
 
 

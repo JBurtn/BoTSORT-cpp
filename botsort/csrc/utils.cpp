@@ -78,19 +78,21 @@ double lapjv(
         throw std::runtime_error("LAPJV algorithm failed");
     }
 
-    for (int i = 0; i < n_rows; ++i)
-    {
-        if (x_c[i] >= n_cols) 
-            rowsol[i] = -1;
-        else
-            rowsol[i] = x_c[i];
-    }
-    for (int i = 0; i < n_cols; ++i)
-    {
-        if (y_c[i] >= n_rows) 
-            rowsol[i] = -1;
-        else
-            rowsol[i] = y_c[i];
+    if (n != n_rows) {
+        for (int i = 0; i < n_rows; ++i)
+        {
+            if (x_c[i] >= n_cols) 
+                rowsol[i] = -1;
+            else
+                rowsol[i] = x_c[i];
+        }
+        for (int i = 0; i < n_cols; ++i)
+        {
+            if (y_c[i] >= n_rows) 
+                colsol[i] = -1;
+            else
+                colsol[i] = y_c[i];
+        }
     }
 
     double opt = 0.0;

@@ -1,3 +1,4 @@
+from __future__ import annotations
 from typing import TYPE_CHECKING
 import numpy as np
 from botsort import _botsort
@@ -71,8 +72,8 @@ class BotSort:
 
         bounding_boxes = bounding_boxes.astype(np.float32).flatten()
         scores = scores.astype(np.float32).flatten()
-        class_ids = class_ids.astype(np.uint8).flatten()
-
+        class_ids = class_ids.astype(np.int64).flatten()
+        
         result = self.tracker.track(
             bounding_boxes,
             scores,

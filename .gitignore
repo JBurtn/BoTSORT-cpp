@@ -2,6 +2,7 @@ build/
 dist/
 *.ipynb
 **/*.egg-info/
+**.so
 
 __pycache__/
 .vscode/

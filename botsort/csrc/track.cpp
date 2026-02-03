@@ -30,23 +30,27 @@ Track::Track(
     _update_tracklet_tlwh_inplace();
 }
 
-void Track::activate(KalmanFilter &kalman_filter, uint32_t frame_id)
-{
-    track_id = next_id();
+void Track::activate(
+    KalmanFilter &kalman_filter,
+    uint32_t frame_id,
+    uint32_t &id_counter
+) {
+
+    track_id = id_counter++;
 
     // Create DetVec from det_tlwh
     DetVec detection_bbox;
     _populate_DetVec_xywh(detection_bbox, det_tlwh);
 
     // Initialize the Kalman filter matrices
-    KFDataStateSpace state_space = kalman_filter.init(detection_bbox);
+    KFDataStateSpace state_space =
+        kalman_filter.init(detection_bbox);
+    
     mean = state_space.first;
     covariance = state_space.second;
 
-    if (frame_id == 1)
-    {
-        is_activated = true;
-    }
+    
+    is_activated = true;
     this->frame_id = frame_id;
     start_frame = frame_id;
     state = TrackState::Tracked;
@@ -54,9 +58,13 @@ void Track::activate(KalmanFilter &kalman_filter, uint32_t frame_id)
     _update_tracklet_tlwh_inplace();
 }
 
-void Track::re_activate(KalmanFilter &kalman_filter, Track &new_track,
-                        uint32_t frame_id, bool new_id)
-{
+void Track::re_activate(
+    KalmanFilter &kalman_filter,
+    Track &new_track,
+    uint32_t frame_id,
+    uint32_t &id_counter,
+    bool new_id
+) {
     DetVec new_track_bbox;
     _populate_DetVec_xywh(new_track_bbox, new_track._tlwh);
 
@@ -70,9 +78,8 @@ void Track::re_activate(KalmanFilter &kalman_filter, Track &new_track,
         _update_features(new_track.curr_feat);
     }
  */
-    if (new_id)
-    {
-        track_id = next_id();
+    if (new_id) {
+        track_id = id_counter++;
     }
 
     tracklet_len = 0;
@@ -175,13 +182,6 @@ void Track::update(KalmanFilter &kalman_filter, Track &new_track,
     *smooth_feat /= smooth_feat->norm();
 } */
 
-int Track::next_id()
-{
-    static int _count = 0;
-    _count++;
-    return _count;
-}
-
 void Track::mark_lost()
 {
     state = TrackState::Lost;
@@ -232,7 +232,7 @@ float Track::get_score() const
     return _score;
 }
 
-uint8_t Track::get_class_id() const
+int64_t Track::get_class_id() const
 {
     return _class_id;
 }

@@ -114,17 +114,26 @@ embedding_distance(const std::vector<std::shared_ptr<Track>> &tracks,
     return {cost_matrix, embedding_dists_mask};
 } */
 
-void fuse_score(CostMatrix &cost_matrix,
-                const std::vector<std::shared_ptr<Track>> &detections)
-{
+void fuse_score(
+    CostMatrix &cost_matrix,
+    const std::vector<std::shared_ptr<Track>> &detections
+) {
+    //std::cout << "DEBUG: About to perform operation" << std::endl;
+    //std::cout << "Matrix shape: " << cost_matrix.rows() << "x" << cost_matrix.cols() << std::endl;
+    
     if (cost_matrix.rows() == 0 || cost_matrix.cols() == 0)
     {return;}
 
-    Eigen::VectorXf scores(cost_matrix.cols());
-    for (Eigen::Index j = 0; j < scores.cols(); j++)
-        scores(j) = detections[j]->get_score();
+    // Check dimensions match
+    assert(static_cast<size_t>(cost_matrix.cols()) == detections.size() && 
+           "Number of columns must match number of detections");
     
-    cost_matrix = (1.0F - ((1.0F - cost_matrix.array()).colwise() * scores.array())).matrix();
+    for (Eigen::Index i = 0; i < cost_matrix.rows(); i++) {
+        for (Eigen::Index j = 0; j < cost_matrix.cols(); j++) {
+            float score = detections[j]->get_score();
+            cost_matrix(i, j) = 1.0F - (1.0F - cost_matrix(i, j)) * score;
+        }
+    }
 }
 
 //Unused when ReID is false

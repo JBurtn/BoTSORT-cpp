@@ -85,7 +85,7 @@ Botsort::Botsort(const Config<TrackerParams> &tracker_config,
     }
     else
     {
-        std::cout << "GMC disabled" << std::endl;
+        // std::cout << "GMC disabled" << std::endl;
         _gmc_enabled = false;
     }
 }
@@ -93,7 +93,7 @@ Botsort::Botsort(const Config<TrackerParams> &tracker_config,
 py::array_t<float>
 Botsort::track(const py::array_t<float> &box_tlwh,
                const py::array_t<float> &score,
-               const py::array_t<uint8_t> &class_ids,
+               const py::array_t<int64_t> &class_ids,
                const py::array_t<uint8_t> &frame)
 {
     py::buffer_info buf = frame.request(false);
@@ -125,10 +125,10 @@ Botsort::track(const py::array_t<float> &box_tlwh,
                                          static_cast<size_t> (box_tlwh_buf.size)};
     std::span<const float> score_span{static_cast<float*> (score_buf.ptr),
                                       static_cast<size_t> (score_buf.size)};
-    std::span<const uint8_t> class_ids_span{static_cast<uint8_t*> (class_ids_buf.ptr), 
+    std::span<const int64_t> class_ids_span{static_cast<int64_t*> (class_ids_buf.ptr), 
                                             static_cast<size_t> (class_ids_buf.size)};
     
-    cv::Mat cv_frame(rows, cols, CV_8UC3, static_cast<uint8_t*>(buf.ptr));
+    cv::Mat cv_frame(rows, cols, CV_8UC3, static_cast<int64_t*>(buf.ptr));
     
     std::vector<std::shared_ptr<Track>> output_tracks;
     Botsort::track(
@@ -151,7 +151,7 @@ Botsort::track(const py::array_t<float> &box_tlwh,
 void
 Botsort::track(std::span<const float> &box_tlwh,
                std::span<const float> &score,
-               std::span<const uint8_t> &class_ids,
+               std::span<const int64_t> &class_ids,
                const cv::Mat &frame,
                std::vector<std::shared_ptr<Track>> &output_tracks)
 {
@@ -178,17 +178,24 @@ Botsort::track(std::span<const float> &box_tlwh,
         std::shared_ptr<Track> tracklet;
         std::vector<float> tlwh = {x, y, width, height};
 
-        if (score[i] > _track_low_thresh)
+        if (score[i/4] > _track_low_thresh)
         {
             tracklet = std::make_shared<Track>(
-                        tlwh, score[i], class_ids[i]);
-
-            if (score[i] >= _track_high_thresh)
-                {detections_high_conf.push_back(tracklet);}
-            else
-                {detections_low_conf.push_back(tracklet);}
+                        tlwh, score[i/4], class_ids[i/4]);
+            
+            //// std::cout << i << std::endl;
+            //// std::cout << score[i/4] << std::endl;
+            //// std::cout << class_ids[i/4] << std::endl;
+            if (score[i/4] >= _track_high_thresh){
+                
+                detections_high_conf.push_back(tracklet);
+            } else {
+                detections_low_conf.push_back(tracklet);
+            }
         }
     }
+    // std::cout << "Low Conf " << detections_low_conf.size() << std::endl;
+    // std::cout << "High Conf " << detections_high_conf.size() << std::endl;
 
     // Segregate tracks in unconfirmed and tracked tracks
     std::vector<std::shared_ptr<Track>> unconfirmed_tracks, tracked_tracks;
@@ -203,6 +210,11 @@ Botsort::track(std::span<const float> &box_tlwh,
             unconfirmed_tracks.push_back(track);
         }
     }
+
+    
+    // std::cout << "Confirmed " << tracked_tracks.size() << std::endl;
+    // std::cout << "Unconfirmed " << unconfirmed_tracks.size() << std::endl;
+
     ////////////////// CREATE TRACK OBJECT FOR ALL THE DETECTIONS //////////////////
 
 
@@ -263,10 +275,13 @@ Botsort::track(std::span<const float> &box_tlwh,
         {
             // If track was not being actively tracked, we re-activate the track with the new associated detection
             // NOTE: There should be a minimum number of frames before a track is re-activated
-            track->re_activate(*_kalman_filter, *detection, _frame_id, false);
+            track->re_activate(*_kalman_filter, *detection, _frame_id, track_count, false);
             refind_tracks.push_back(track);
         }
     }
+    
+    // std::cout << "Activated Tracks " << detections_low_conf.size() << std::endl;
+    // std::cout << "Refind Tracks " << detections_low_conf.size() << std::endl;
     ////////////////// First association, with high score detection boxes //////////////////
 
 
@@ -299,20 +314,19 @@ Botsort::track(std::span<const float> &box_tlwh,
                 detections_low_conf[match.second];
 
         // If track was being actively tracked, we update the track with the new associated detection
-        if (track->state == TrackState::Tracked)
-        {
+        if (track->state == TrackState::Tracked) {
             track->update(*_kalman_filter, *detection, _frame_id);
             activated_tracks.push_back(track);
-        }
-        else
-        {
+        } else {
             // If track was not being actively tracked, we re-activate the track with the new associated detection
             // NOTE: There should be a minimum number of frames before a track is re-activated
-            track->re_activate(*_kalman_filter, *detection, _frame_id, false);
+            track->re_activate(*_kalman_filter, *detection, _frame_id, track_count, false);
             refind_tracks.push_back(track);
         }
     }
 
+    // std::cout << "Activated Tracks 2nd " << detections_low_conf.size() << std::endl;
+    // std::cout << "Refind Tracks 2nd " << detections_low_conf.size() << std::endl;
     // The tracks that are not associated with any detection even after the second association are marked as lost
     std::vector<std::shared_ptr<Track>> lost_tracks;
     for (int unmatched_track_index: second_associations.unmatched_track_indices)
@@ -325,6 +339,8 @@ Botsort::track(std::span<const float> &box_tlwh,
             lost_tracks.push_back(track);
         }
     }
+    
+    // std::cout << "Lost Tracks " << lost_tracks.size() << std::endl;
     ////////////////// Second association, with low score detection boxes //////////////////
 
 
@@ -336,7 +352,8 @@ Botsort::track(std::span<const float> &box_tlwh,
                 detections_high_conf[detection_idx];
         unmatched_detections_after_1st_association.push_back(detection);
     }
-
+    
+    // std::cout << "Second Association Unmatched " << unmatched_detections_after_1st_association.size() << std::endl;
     //Find IoU distance between unconfirmed tracks and high confidence detections left after the first association
     CostMatrix iou_dists_unconfirmed, raw_emd_dist_unconfirmed,
             iou_dists_mask_unconfirmed, emd_dist_mask_unconfirmed;
@@ -366,6 +383,8 @@ Botsort::track(std::span<const float> &box_tlwh,
         track->update(*_kalman_filter, *detection, _frame_id);
         activated_tracks.push_back(track);
     }
+    
+    // // std::cout << "Activated Tracks before removal: " << activated_tracks.size() << std::endl;
 
     // All the unconfirmed tracks that are not associated with any detection are marked as removed
     std::vector<std::shared_ptr<Track>> removed_tracks;
@@ -376,8 +395,9 @@ Botsort::track(std::span<const float> &box_tlwh,
         track->mark_removed();
         removed_tracks.push_back(track);
     }
+    
+    //// std::cout << "Removed Tracks " << removed_tracks.size() << std::endl;
     ////////////////// Deal with unconfirmed tracks //////////////////
-
 
     ////////////////// Initialize new tracks //////////////////
     std::vector<std::shared_ptr<Track>> unmatched_high_conf_detections;
@@ -385,13 +405,20 @@ Botsort::track(std::span<const float> &box_tlwh,
     {
         const std::shared_ptr<Track> &detection =
                 unmatched_detections_after_1st_association[detection_idx];
-        
         if (detection->get_score() >= _new_track_thresh)
         {
-            detection->activate(*_kalman_filter, _frame_id);
+            /*auto tlwh = detection->get_tlwh();
+            std::cout << "New Track" << std::endl;
+            for (auto point: tlwh)
+                {std::cout << point << ' ';}
+            std::cout << std::endl; */
+
+            detection->activate(*_kalman_filter, _frame_id, track_count);            
             activated_tracks.push_back(detection);
         }
     }
+    
+    // std::cout << "Activated Tracks New " << detections_low_conf.size() << std::endl;
     ////////////////// Initialize new tracks //////////////////
 
 
@@ -400,6 +427,8 @@ Botsort::track(std::span<const float> &box_tlwh,
     {
         if (_frame_id - track->end_frame() > _max_time_lost)
         {
+            
+            // std::cout << "Removed: " << track->track_id << std::endl;
             track->mark_removed();
             removed_tracks.push_back(track);
         }
@@ -564,7 +593,7 @@ void Botsort::_load_params_from_config(const TrackerParams &config)
     _lambda = config.lambda;
 }
 
-PYBIND11_MODULE(_botsort, m, py::multiple_interpreters::per_interpreter_gil()){
+PYBIND11_MODULE(_botsort, m, py::multiple_interpreters::per_interpreter_gil()) {
     auto config = m.def_submodule("configs", "All Config Classes for BotSort");
     bind_tracker_params(config);
     bind_gmc_configs(config);
@@ -572,16 +601,19 @@ PYBIND11_MODULE(_botsort, m, py::multiple_interpreters::per_interpreter_gil()){
 
     py::class_<Botsort, py::smart_holder>(m, "BotSort")
         .def(py::init<Config<TrackerParams>, Config<GMC_Params>>())
-        .def("track", static_cast<py::array_t<float> (Botsort::*) 
+        .def("track", static_cast<
+            py::array_t<float> 
+            (Botsort::*) 
                       (const py::array_t<float> &/* bounding boxes */, 
                        const py::array_t<float> &/* scores */,
-                       const py::array_t<uint8_t> &/*class ids*/,
-                       const py::array_t<uint8_t> &)> (&Botsort::track),
+                       const py::array_t<int64_t> &/*class ids*/,
+                       const py::array_t<uint8_t> &) /* frame */
+            > (&Botsort::track),
                     "BotSort entry/forward function.\n"
                     "\tParams:"
                     "\t\t Bounding Boxes. 1D numpy float array with size divisible by 4"
                     "\t\t Scores. 1D numpy float array"
-                    "\t\t Class Ids. 1D numpy uint8 int array"
+                    "\t\t Class Ids. 1D numpy long array"
                     "\tReturns:"
                     "\t\t1D numpy array of IDs in order of class ids input");
 }

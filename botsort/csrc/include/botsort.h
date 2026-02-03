@@ -40,16 +40,17 @@ public:
     void
     track(std::span<const float> &box_tlwh,
           std::span<const float> &score,
-          std::span<const uint8_t> &class_ids,
+          std::span<const int64_t> &class_ids,
           const cv::Mat &frame,
           std::vector<std::shared_ptr<Track>> &output_tracks);
     
     py::array_t<float>
     track(const py::array_t<float> &box_tlwh,
           const py::array_t<float> &score,
-          const py::array_t<uint8_t> &class_ids,
+          const py::array_t<int64_t> &class_ids,
           const py::array_t<uint8_t> &frame);
-
+    
+    uint32_t track_count = 0;
 private:
     /**
      * @brief Extract visual features from the given frame and bounding box

@@ -33,8 +33,7 @@ KFDataStateSpace KalmanFilter::init(const DetVec &measurement) const
     KFStateSpaceVec mean_state_space;
     mean_state_space.head<4>() = measurement.head<4>();
     mean_state_space.tail<4>().setConstant(init_velocity);
-
-
+    
     float w = measurement(2), h = measurement(3);
     KFStateSpaceVec std_dev;
     std_dev << 2 * _std_weight_position * w, 2 * _std_weight_position * h,
