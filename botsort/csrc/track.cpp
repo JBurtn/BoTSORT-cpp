@@ -9,9 +9,16 @@ Track::Track(
     float score,
     uint8_t class_id,
     std::optional<FeatureVector> feat,
-    int feat_history_size)
-    : is_activated(false), state(TrackState::New), tracklet_len(0),
-      det_tlwh(std::move(tlwh)), _score(score), _class_id(class_id)
+    int feat_history_size,
+    int32_t track_index
+    ):
+    is_activated(false),
+    state(TrackState::New),
+    tracklet_len(0),
+    det_tlwh(std::move(tlwh)),
+    _score(score),
+    _class_id(class_id),
+    track_index(track_index)
 {
 
     if (feat)
@@ -49,8 +56,9 @@ void Track::activate(
     mean = state_space.first;
     covariance = state_space.second;
 
+    if (frame_id == 1)
+        {is_activated = true;}
     
-    is_activated = true;
     this->frame_id = frame_id;
     start_frame = frame_id;
     state = TrackState::Tracked;

@@ -133,7 +133,7 @@ Botsort::track(const py::array_t<float> &box_tlwh,
     std::vector<std::shared_ptr<Track>> output_tracks;
     Botsort::track(
         box_tlwh_span, score_span, class_ids_span, cv_frame, output_tracks);
-    py::array_t<float> output({static_cast<int>(output_tracks.size()), 7});
+    py::array_t<float> output({static_cast<int>(output_tracks.size()), 8});
     auto view = output.mutable_unchecked<2>();
 
     for (auto i = 0; i < static_cast<int>(output_tracks.size()); ++i){
@@ -144,6 +144,7 @@ Botsort::track(const py::array_t<float> &box_tlwh,
         view(i, 4) = static_cast<float>(output_tracks[i]->get_class_id());
         view(i, 5) = output_tracks[i]->get_score();
         view(i, 6) = static_cast<float>(output_tracks[i]->track_id);
+        view(i, 7) = static_cast<float>(output_tracks[i]->track_index);
     }
     return output;
 }
@@ -181,13 +182,18 @@ Botsort::track(std::span<const float> &box_tlwh,
         if (score[i/4] > _track_low_thresh)
         {
             tracklet = std::make_shared<Track>(
-                        tlwh, score[i/4], class_ids[i/4]);
+                tlwh, /*tlwh*/
+                score[i/4], /*score*/
+                class_ids[i/4], /*class_id*/
+                std::nullopt, /*feat*/
+                50, /*feat_history_size*/
+                i/4 /*track_index*/
+            );
             
             //// std::cout << i << std::endl;
             //// std::cout << score[i/4] << std::endl;
             //// std::cout << class_ids[i/4] << std::endl;
             if (score[i/4] >= _track_high_thresh){
-                
                 detections_high_conf.push_back(tracklet);
             } else {
                 detections_low_conf.push_back(tracklet);
@@ -227,7 +233,7 @@ Botsort::track(std::span<const float> &box_tlwh,
     Track::multi_predict(tracks_pool, *_kalman_filter);
 
     // Estimate camera motion and apply camera motion compensation
-    if (_gmc_enabled)
+    if (_gmc_enabled == true)
     {
         HomographyMatrix H = _gmc_algo->apply(frame, box_tlwh);
         Track::multi_gmc(tracks_pool, H);

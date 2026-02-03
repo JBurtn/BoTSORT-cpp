@@ -69,6 +69,11 @@ class BotSort:
                              + str(scores.size))
         
         frame = np.ascontiguousarray(frame)
+        bounding_boxes[..., ::2] = \
+            bounding_boxes[..., ::2].clip(min=0, max=frame.shape[1])
+        
+        bounding_boxes[..., 1::2] = \
+            bounding_boxes[..., 1::2].clip(min=0, max=frame.shape[0])
 
         bounding_boxes = bounding_boxes.astype(np.float32).flatten()
         scores = scores.astype(np.float32).flatten()
@@ -80,6 +85,7 @@ class BotSort:
             class_ids,
             frame
         )
-        return result
+        indices = result[:, 7]
+        return result[:, :7], indices.astype(np.int32)
 
         

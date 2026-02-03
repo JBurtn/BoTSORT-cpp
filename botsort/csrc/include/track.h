@@ -34,7 +34,8 @@ public:
           float score,
           uint8_t class_id,
           std::optional<FeatureVector> feat = std::nullopt,
-          int feat_history_size = 50);
+          int feat_history_size = 50,
+          int32_t track_index = -1);
     
     /**
      * @brief Get end frame-id of the track
@@ -193,6 +194,10 @@ public:
     bool is_activated;
     int track_id;
     int state;
+
+    // Used to track the instance through the algorithm for
+    // further processing
+    int32_t track_index = -1;
 
     uint32_t frame_id, tracklet_len, start_frame;
 
