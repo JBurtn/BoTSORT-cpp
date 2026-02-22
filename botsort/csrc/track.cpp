@@ -95,6 +95,7 @@ void Track::re_activate(
     is_activated = true;
     _score = new_track._score;
     this->frame_id = frame_id;
+    this->track_index = new_track.track_index;
 
     _update_class_id(new_track._class_id, new_track._score);
     _update_tracklet_tlwh_inplace();
@@ -163,6 +164,7 @@ void Track::update(KalmanFilter &kalman_filter, Track &new_track,
     _score = new_track._score;
     tracklet_len++;
     this->frame_id = frame_id;
+    this->track_index = new_track.track_index;
 
     _update_class_id(new_track._class_id, new_track._score);
     _update_tracklet_tlwh_inplace();
